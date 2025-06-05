@@ -22,29 +22,39 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <TextBlock Text="Equipment Simulator" FontSize="20" FontWeight="Bold" 
-                               Foreground="White" VerticalAlignment="Center"/>
+                       Foreground="White" VerticalAlignment="Center"/>
                     <TextBlock Text="{Binding EquipmentName, Mode=OneWay}" FontSize="16" 
-                               Foreground="#B0BEC5" Margin="20,0,0,0" VerticalAlignment="Center"/>
+                       Foreground="#B0BEC5" Margin="20,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0">
+                    <TextBlock Text="Equipment ID:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox Text="{Binding EquipmentId}" Width="60" VerticalAlignment="Center" HorizontalContentAlignment="Center">
+                        <i:Interaction.Behaviors>
+                            <behaviors:TextBoxNumericBehavior DecimalPlaces="0" MinValue="1" MaxValue="32"/>
+                        </i:Interaction.Behaviors>
+                    </TextBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0">
                     <TextBlock Text="Server URL:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
                     <TextBox Text="{Binding ServerUrl}" Width="200" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <StackPanel Grid.Column="3" Orientation="Horizontal">
                     <Button Content="Start Simulation" 
-                            Command="{Binding StartCommand}"
-                            Style="{StaticResource StartButton}"
-                            IsEnabled="{Binding CanStart, Mode=OneWay}"/>
+                    Command="{Binding StartCommand}"
+                    Style="{StaticResource StartButton}"
+                    IsEnabled="{Binding CanStart, Mode=OneWay}"/>
                     <Button Content="Stop Simulation" 
-                            Command="{Binding StopCommand}"
-                            Style="{StaticResource StopButton}"
-                            IsEnabled="{Binding IsRunning, Mode=OneWay}"/>
+                    Command="{Binding StopCommand}"
+                    Style="{StaticResource StopButton}"
+                    IsEnabled="{Binding IsRunning, Mode=OneWay}"/>
                 </StackPanel>
             </Grid>
         </Border>

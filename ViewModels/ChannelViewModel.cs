@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using CyclerSim.Models;
@@ -197,7 +198,11 @@ namespace CyclerSim.ViewModels
 
         private async void SendNow()
         {
-            await _dataService.SendChannelDataAsync(GetChannelData(1)); // Default equipment ID = 1
+            // MainViewModel에서 Equipment ID를 가져오도록 수정
+            var mainViewModel = Application.Current.MainWindow?.DataContext as MainViewModel;
+            int equipmentId = mainViewModel?.EquipmentId ?? 1;
+
+            await _dataService.SendChannelDataAsync(GetChannelData(equipmentId));
             LastSentTime = DateTime.Now;
         }
     }

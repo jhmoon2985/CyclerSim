@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Windows;
 using System.Windows.Input;
 using CyclerSim.Models;
 using CyclerSim.Services;
@@ -85,7 +86,10 @@ namespace CyclerSim.ViewModels
 
         private async void SendNow()
         {
-            await _dataService.SendCanLinDataAsync(GetCanLinData(1)); // Default equipment ID = 1
+            var mainViewModel = Application.Current.MainWindow?.DataContext as MainViewModel;
+            int equipmentId = mainViewModel?.EquipmentId ?? 1;
+
+            await _dataService.SendCanLinDataAsync(GetCanLinData(equipmentId));
         }
     }
 }
