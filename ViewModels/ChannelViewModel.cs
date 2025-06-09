@@ -106,7 +106,7 @@ namespace CyclerSim.ViewModels
         public double Power
         {
             get => _power;
-            private set => SetProperty(ref _power, value);
+            set => SetProperty(ref _power, value);
         }
 
         public double Energy

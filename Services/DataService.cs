@@ -50,12 +50,7 @@ namespace CyclerSim.Services
                 var success = await _httpService.PostAsync("/api/ClientData/channel", channelData);
                 if (success)
                 {
-                    _logger.LogDebug("Channel data sent successfully - Equipment: {EquipmentId}, Channel: {ChannelNumber}, Status: {Status}, Voltage: {Voltage}V, Current: {Current}A",
-                        channelData.EquipmentId, channelData.ChannelNumber, channelData.Status, channelData.Voltage, channelData.Current);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to send channel data - Equipment: {EquipmentId}, Channel: {ChannelNumber}",
+                    _logger.LogDebug("Channel data sent - Equipment: {EquipmentId}, Channel: {ChannelNumber}",
                         channelData.EquipmentId, channelData.ChannelNumber);
                 }
                 return success;
@@ -68,6 +63,32 @@ namespace CyclerSim.Services
             }
         }
 
+        // 새로운 배치 전송 메서드
+        public async Task<bool> SendChannelDataBatchAsync(List<ChannelData> channelDataList)
+        {
+            try
+            {
+                var success = await _httpService.PostAsync("/api/ClientData/channels/batch", channelDataList);
+                if (success)
+                {
+                    _logger.LogDebug("Channel batch data sent - {Count} channels for Equipment {EquipmentId}",
+                        channelDataList.Count, channelDataList.Count > 0 ? channelDataList[0].EquipmentId : 0);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to send channel batch data - {Count} channels",
+                        channelDataList.Count);
+                }
+                return success;
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "Error sending channel batch data - {Count} channels",
+                    channelDataList.Count);
+                return false;
+            }
+        }
+
         public async Task<bool> SendCanLinDataAsync(CanLinData canLinData)
         {
             try
@@ -75,12 +96,7 @@ namespace CyclerSim.Services
                 var success = await _httpService.PostAsync("/api/ClientData/canlin", canLinData);
                 if (success)
                 {
-                    _logger.LogDebug("CAN/LIN data sent successfully - Equipment: {EquipmentId}, Name: {Name}, Value: {CurrentValue}",
-                        canLinData.EquipmentId, canLinData.Name, canLinData.CurrentValue);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to send CAN/LIN data - Equipment: {EquipmentId}, Name: {Name}",
+                    _logger.LogDebug("CAN/LIN data sent - Equipment: {EquipmentId}, Name: {Name}",
                         canLinData.EquipmentId, canLinData.Name);
                 }
                 return success;
@@ -100,12 +116,7 @@ namespace CyclerSim.Services
                 var success = await _httpService.PostAsync("/api/ClientData/aux", auxData);
                 if (success)
                 {
-                    _logger.LogDebug("AUX data sent successfully - Equipment: {EquipmentId}, Sensor: {SensorId}, Name: {Name}, Type: {Type}, Value: {Value}",
-                        auxData.EquipmentId, auxData.SensorId, auxData.Name, auxData.Type, auxData.Value);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to send AUX data - Equipment: {EquipmentId}, Sensor: {SensorId}",
+                    _logger.LogDebug("AUX data sent - Equipment: {EquipmentId}, Sensor: {SensorId}",
                         auxData.EquipmentId, auxData.SensorId);
                 }
                 return success;
@@ -125,29 +136,15 @@ namespace CyclerSim.Services
                 var success = await _httpService.PostAsync("/api/ClientData/alarm", alarmData);
                 if (success)
                 {
-                    var levelText = alarmData.Level switch
-                    {
-                        0 => "Info",
-                        1 => "Warning",
-                        2 => "Error",
-                        3 => "Critical",
-                        _ => "Unknown"
-                    };
-
-                    _logger.LogInformation("Alarm sent successfully - Equipment: {EquipmentId}, Level: {Level} ({LevelText}), Message: {Message}",
-                        alarmData.EquipmentId, alarmData.Level, levelText, alarmData.Message);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to send alarm - Equipment: {EquipmentId}, Message: {Message}",
-                        alarmData.EquipmentId, alarmData.Message);
+                    _logger.LogInformation("Alarm sent - Equipment: {EquipmentId}, Level: {Level}, Message: {Message}",
+                        alarmData.EquipmentId, alarmData.Level, alarmData.Message);
                 }
                 return success;
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Error sending alarm for Equipment {EquipmentId}, Message: {Message}",
-                    alarmData.EquipmentId, alarmData.Message);
+                _logger.LogError(ex, "Error sending alarm for Equipment {EquipmentId}",
+                    alarmData.EquipmentId);
                 return false;
             }
         }

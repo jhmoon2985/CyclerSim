@@ -6,6 +6,16 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+	<!-- 성능 최적화 설정 -->
+	<PublishSingleFile>true</PublishSingleFile>
+	<SelfContained>true</SelfContained>
+	<PublishReadyToRun>true</PublishReadyToRun>
+	<!-- 트리밍은 비활성화 -->
+	  <!-- <PublishTrimmed>true</PublishTrimmed> -->
+    <TrimMode>link</TrimMode>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <Optimize>true</Optimize>
   </PropertyGroup>
 
 	<ItemGroup>
@@ -15,6 +25,8 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.39" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<!-- 성능 카운터 추가 -->
+		<PackageReference Include="System.Diagnostics.PerformanceCounter" Version="7.0.0" />
 	</ItemGroup>
 
 </Project>

@@ -62,107 +62,128 @@
         <!-- Main Content -->
         <TabControl Grid.Row="1" Margin="10">
             <!-- Channels Tab -->
-            <TabItem Header="Channels" FontSize="14" FontWeight="SemiBold">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Channels}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="2"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <GroupBox Header="{Binding HeaderText, Mode=OneWay}" Margin="5">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
+            <TabItem Header="Channels (128 Total)" FontSize="14" FontWeight="SemiBold">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Status:" VerticalAlignment="Center"/>
-                                        <ComboBox Grid.Row="0" Grid.Column="1" 
-                                                  SelectedIndex="{Binding Status}" Margin="5,2">
-                                            <ComboBoxItem Content="Idle"/>
-                                            <ComboBoxItem Content="Active"/>
-                                            <ComboBoxItem Content="Error"/>
-                                            <ComboBoxItem Content="Pause"/>
-                                        </ComboBox>
+                    <!-- Performance Info Panel -->
+                    <Border Grid.Row="0" Background="#E3F2FD" Padding="10" Margin="5" CornerRadius="5">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Mode:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                        <ComboBox Grid.Row="0" Grid.Column="3" 
-                                                  SelectedIndex="{Binding Mode}" Margin="5,2">
-                                            <ComboBoxItem Content="Rest"/>
-                                            <ComboBoxItem Content="Charge"/>
-                                            <ComboBoxItem Content="Discharge"/>
-                                            <ComboBoxItem Content="CV"/>
-                                            <ComboBoxItem Content="CC"/>
-                                        </ComboBox>
+                            <TextBlock Grid.Column="0" Text="High-Performance Mode: 128 channels at 100ms intervals" 
+                           FontWeight="SemiBold" VerticalAlignment="Center"/>
 
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Voltage (V):" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Voltage, StringFormat=F2}">
-                                            <i:Interaction.Behaviors>
-                                                <behaviors:TextBoxNumericBehavior DecimalPlaces="2"/>
-                                            </i:Interaction.Behaviors>
-                                        </TextBox>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0">
+                                <TextBlock Text="UI Channels:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <TextBlock Text="{Binding Channels.Count}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Text="/ 128 Total" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                            </StackPanel>
 
-                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="Current (A):" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                        <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding Current, StringFormat=F2}">
-                                            <i:Interaction.Behaviors>
-                                                <behaviors:TextBoxNumericBehavior DecimalPlaces="2"/>
-                                            </i:Interaction.Behaviors>
-                                        </TextBox>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0">
+                                <TextBlock Text="Data Rate:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <TextBlock Text="1,280 points/sec" FontWeight="Bold" VerticalAlignment="Center" Foreground="Blue"/>
+                            </StackPanel>
 
-                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Capacity (Ah):" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Capacity, StringFormat=F1}">
-                                            <i:Interaction.Behaviors>
-                                                <behaviors:TextBoxNumericBehavior DecimalPlaces="1"/>
-                                            </i:Interaction.Behaviors>
-                                        </TextBox>
+                            <Button Grid.Column="3" Content="Toggle All Auto Update" 
+                        Click="ToggleAllAutoUpdate_Click" Background="#4CAF50" Foreground="White"/>
+                        </Grid>
+                    </Border>
 
-                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="Power (W):" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                        <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding Power, Mode=OneWay, StringFormat=F2}" IsReadOnly="True" Background="#F5F5F5"/>
+                    <!-- Channels Display (Virtualized for performance) -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" 
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ItemsControl ItemsSource="{Binding Channels}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel Orientation="Vertical"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- 간소화된 채널 템플릿 (성능 향상) -->
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="1" Margin="5" CornerRadius="5" 
+                                Background="White">
+                                        <Expander Header="{Binding HeaderText, Mode=OneWay}" IsExpanded="False">
+                                            <Grid Margin="10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Energy (Wh):" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Energy, StringFormat=F1}">
-                                            <i:Interaction.Behaviors>
-                                                <behaviors:TextBoxNumericBehavior DecimalPlaces="1"/>
-                                            </i:Interaction.Behaviors>
-                                        </TextBox>
+                                                <!-- Row 0: Status, Mode, Auto Update -->
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Status:" VerticalAlignment="Center"/>
+                                                <ComboBox Grid.Row="0" Grid.Column="1" SelectedIndex="{Binding Status}" Margin="5,2">
+                                                    <ComboBoxItem Content="Idle"/>
+                                                    <ComboBoxItem Content="Active"/>
+                                                    <ComboBoxItem Content="Error"/>
+                                                    <ComboBoxItem Content="Pause"/>
+                                                </ComboBox>
 
-                                        <TextBlock Grid.Row="3" Grid.Column="2" Text="Schedule:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                        <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding ScheduleName}"/>
+                                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Mode:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                <ComboBox Grid.Row="0" Grid.Column="3" SelectedIndex="{Binding Mode}" Margin="5,2">
+                                                    <ComboBoxItem Content="Rest"/>
+                                                    <ComboBoxItem Content="Charge"/>
+                                                    <ComboBoxItem Content="Discharge"/>
+                                                    <ComboBoxItem Content="CV"/>
+                                                    <ComboBoxItem Content="CC"/>
+                                                </ComboBox>
 
-                                        <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" 
-                                                  Content="Auto Update" IsChecked="{Binding AutoUpdate}" Margin="0,5"/>
+                                                <CheckBox Grid.Row="0" Grid.Column="4" Grid.ColumnSpan="2" 
+                                              Content="Auto Update" IsChecked="{Binding AutoUpdate}" 
+                                              Margin="10,0,0,0" VerticalAlignment="Center"/>
 
-                                        <StackPanel Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Content="Send Now" Command="{Binding SendNowCommand}" 
-                                                    Background="#FF9800" BorderBrush="#F57C00" Width="80"/>
-                                        </StackPanel>
+                                                <!-- Row 1: Voltage, Current, Capacity -->
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="V:" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Voltage, StringFormat=F2}" 
+                                             IsReadOnly="True" Background="#F9F9F9" Margin="5,2"/>
 
-                                        <Border Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="4" 
-                                                Background="{Binding StatusColor, Mode=OneWay}" Height="3" Margin="0,5,0,0"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="2" Text="I:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding Current, StringFormat=F2}" 
+                                             IsReadOnly="True" Background="#F9F9F9" Margin="5,2"/>
 
-                                        <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="4" 
-                                                   Text="{Binding LastSentTime, Mode=OneWay, StringFormat='Last sent: {0:HH:mm:ss.fff}'}" 
-                                                   FontSize="10" Foreground="Gray" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                </GroupBox>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                                                <TextBlock Grid.Row="1" Grid.Column="4" Text="Cap:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                <TextBox Grid.Row="1" Grid.Column="5" Text="{Binding Capacity, StringFormat=F1}" 
+                                             IsReadOnly="True" Background="#F9F9F9" Margin="5,2"/>
+
+                                                <!-- Row 2: Power, Energy, Status Indicator -->
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Text="P:" VerticalAlignment="Center"/>
+                                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Power, StringFormat=F2}" 
+                                             IsReadOnly="True" Background="#F9F9F9" Margin="5,2"/>
+
+                                                <TextBlock Grid.Row="2" Grid.Column="2" Text="E:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding Energy, StringFormat=F1}" 
+                                             IsReadOnly="True" Background="#F9F9F9" Margin="5,2"/>
+
+                                                <Border Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="2" 
+                                            Background="{Binding StatusColor, Mode=OneWay}" Height="20" 
+                                            CornerRadius="10" Margin="10,2,0,2"/>
+                                            </Grid>
+                                        </Expander>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </TabItem>
 
             <!-- CAN/LIN Tab -->

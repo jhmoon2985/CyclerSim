@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using CyclerSim.ViewModels;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -19,6 +20,23 @@ namespace CyclerSim
         public MainWindow()
         {
             InitializeComponent();
+        }
+
+        private void ToggleAllAutoUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is MainViewModel viewModel)
+            {
+                var currentState = viewModel.Channels.FirstOrDefault()?.AutoUpdate ?? false;
+                var newState = !currentState;
+
+                foreach (var channel in viewModel.Channels)
+                {
+                    channel.AutoUpdate = newState;
+                }
+
+                var statusMessage = newState ? "All channels auto-update enabled" : "All channels auto-update disabled";
+                viewModel.StatusMessage = statusMessage;
+            }
         }
     }
 }

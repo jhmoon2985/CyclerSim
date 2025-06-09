@@ -24,18 +24,26 @@ namespace CyclerSim
                     // Services
                     services.AddSingleton<IHttpService, HttpService>();
                     services.AddSingleton<IDataService, DataService>();
+                    services.AddSingleton<PerformanceMonitor>(); // 성능 모니터 추가
 
                     // ViewModels
                     services.AddTransient<MainViewModel>();
 
-                    // Logging
-                    services.AddLogging(builder => builder.AddConsole());
+                    // Logging with optimized levels
+                    services.AddLogging(builder =>
+                    {
+                        builder.AddConsole();
+                        builder.SetMinimumLevel(LogLevel.Information); // 로그 레벨 최적화
+                    });
                 })
                 .Build();
 
             var mainWindow = new MainWindow();
             var mainViewModel = _host.Services.GetRequiredService<MainViewModel>();
             mainWindow.DataContext = mainViewModel;
+
+            // 성능 모니터 시작
+            var performanceMonitor = _host.Services.GetRequiredService<PerformanceMonitor>();
 
             mainWindow.Show();
 

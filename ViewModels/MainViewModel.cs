@@ -10,6 +10,7 @@ using CyclerSim.Models;
 using CyclerSim.Services;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 namespace CyclerSim.ViewModels
 {
@@ -18,7 +19,7 @@ namespace CyclerSim.ViewModels
         private readonly IDataService _dataService;
         private readonly ILogger<MainViewModel> _logger;
         private readonly DispatcherTimer _simulationTimer;
-        private readonly DispatcherTimer _dataTransmissionTimer;
+        private readonly DispatcherTimer _batchTransmissionTimer;
         private readonly DispatcherTimer _clockTimer;
 
         private CancellationTokenSource? _cancellationTokenSource;
@@ -34,18 +35,23 @@ namespace CyclerSim.ViewModels
         private int _newAlarmLevel;
         private string _newAlarmMessage = string.Empty;
 
-        // 전송 속도 최적화
-        private const int SIMULATION_INTERVAL = 500;     // 500ms - UI 업데이트 간격 증가
-        private const int TRANSMISSION_INTERVAL = 2000;  // 2초 - 서버 전송 간격 증가
+        // 고성능 설정: 100ms 시뮬레이션, 100ms 배치 전송
+        private const int SIMULATION_INTERVAL = 100;      // 100ms
+        private const int BATCH_TRANSMISSION_INTERVAL = 100;  // 100ms 배치 전송
+        private const int MAX_CHANNELS = 128;             // 최대 128채널 지원
 
-        // 배치 처리를 위한 큐
-        private readonly ConcurrentQueue<ChannelData> _channelDataQueue = new();
-        private readonly ConcurrentQueue<CanLinData> _canLinDataQueue = new();
-        private readonly ConcurrentQueue<AuxData> _auxDataQueue = new();
+        // 고성능 배치 데이터 저장소
+        private readonly List<ChannelData> _channelDataBatch = new();
+        private readonly List<CanLinData> _canLinDataBatch = new();
+        private readonly List<AuxData> _auxDataBatch = new();
 
-        // 연결 실패 처리
-        private int _consecutiveFailures = 0;
-        private const int MAX_CONSECUTIVE_FAILURES = 3;
+        // 스레드 안전한 락
+        private readonly object _batchLock = new object();
+
+        // 성능 모니터링
+        private int _batchesSent = 0;
+        private DateTime _lastPerformanceReport = DateTime.Now;
+        private long _totalDataPointsSent = 0;
 
         public MainViewModel(IDataService dataService, ILogger<MainViewModel> logger)
         {
@@ -63,19 +69,19 @@ namespace CyclerSim.ViewModels
             StopCommand = new RelayCommand(StopSimulation, () => IsRunning);
             SendAlarmCommand = new RelayCommand(async () => await SendAlarm(), () => !string.IsNullOrWhiteSpace(NewAlarmMessage));
 
-            // 시뮬레이션 타이머 (UI 업데이트용) - 간격 증가
+            // 고성능 시뮬레이션 타이머 (100ms)
             _simulationTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(SIMULATION_INTERVAL)
             };
             _simulationTimer.Tick += SimulationTimer_Tick;
 
-            // 데이터 전송 타이머 (서버 전송용) - 간격 증가 및 배치 처리
-            _dataTransmissionTimer = new DispatcherTimer
+            // 배치 전송 타이머 (100ms)
+            _batchTransmissionTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(TRANSMISSION_INTERVAL)
+                Interval = TimeSpan.FromMilliseconds(BATCH_TRANSMISSION_INTERVAL)
             };
-            _dataTransmissionTimer.Tick += DataTransmissionTimer_Tick;
+            _batchTransmissionTimer.Tick += BatchTransmissionTimer_Tick;
 
             _clockTimer = new DispatcherTimer
             {
@@ -84,11 +90,13 @@ namespace CyclerSim.ViewModels
             _clockTimer.Tick += (s, e) => CurrentTime = DateTime.Now;
             _clockTimer.Start();
 
-            // Initialize data
+            // Initialize data with more channels
             InitializeData();
 
-            // Set server URL in data service
+            // Set server URL
             _dataService.SetServerUrl(_serverUrl);
+
+            _logger.LogInformation("High-performance CyclerSim initialized for {MaxChannels} channels", MAX_CHANNELS);
         }
 
         #region Properties
@@ -205,40 +213,40 @@ namespace CyclerSim.ViewModels
 
         private void InitializeData()
         {
-            // Initialize 8 channels
-            for (int i = 1; i <= 8; i++)
+            // 128채널 초기화 (UI 표시용은 제한)
+            var uiChannelCount = Math.Min(16, MAX_CHANNELS); // UI에는 16개만 표시
+            for (int i = 1; i <= uiChannelCount; i++)
             {
                 Channels.Add(new ChannelViewModel(_dataService, i));
             }
 
-            // Initialize CAN/LIN data - 개수 줄임
+            // CAN/LIN 데이터 최소화
             var canLinItems = new[]
             {
-                ("Battery_Voltage", "Battery Voltage"),
-                ("Battery_Current", "Battery Current"),
-                ("Battery_SOC", "Battery SOC"),
-                ("Cell_Voltage_Min", "Cell Voltage Min"),
-                ("Cell_Temp_Min", "Cell Temperature Min")
+                "Battery_Voltage",
+                "Battery_Current",
+                "Battery_SOC"
             };
 
-            foreach (var (id, name) in canLinItems)
+            foreach (var name in canLinItems)
             {
                 CanLinData.Add(new CanLinViewModel(_dataService, name));
             }
 
-            // Initialize AUX sensors - 개수 줄임
+            // AUX 센서 최소화
             var auxItems = new[]
             {
-                ("AUX01", "Ambient Temperature", 1),
-                ("AUX02", "Chamber Temperature", 1),
-                ("AUX03", "Supply Voltage", 0),
-                ("AUX04", "NTC Sensor 1", 2)
+                ("AUX01", "Temperature", 1),
+                ("AUX02", "Voltage", 0)
             };
 
             foreach (var (sensorId, name, type) in auxItems)
             {
                 AuxData.Add(new AuxViewModel(_dataService, sensorId, name, type));
             }
+
+            _logger.LogInformation("Initialized {UIChannels} UI channels for {TotalChannels} total channels",
+                uiChannelCount, MAX_CHANNELS);
         }
 
         private async Task StartSimulation()
@@ -247,8 +255,10 @@ namespace CyclerSim.ViewModels
             {
                 _cancellationTokenSource = new CancellationTokenSource();
                 IsRunning = true;
-                StatusMessage = "Starting simulation...";
-                _consecutiveFailures = 0;
+                StatusMessage = "Starting high-performance simulation...";
+                _batchesSent = 0;
+                _totalDataPointsSent = 0;
+                _lastPerformanceReport = DateTime.Now;
 
                 // 연결 테스트
                 var connectionTest = await _dataService.TestConnectionAsync();
@@ -256,13 +266,21 @@ namespace CyclerSim.ViewModels
                 {
                     ConnectionStatus = "Connected";
                     ConnectionStatusColor = Brushes.Green;
-                    StatusMessage = "Simulation running";
+                    StatusMessage = "High-performance simulation running (100ms intervals)";
 
-                    // 두 개의 타이머 모두 시작
+                    // 배치 데이터 초기화
+                    lock (_batchLock)
+                    {
+                        _channelDataBatch.Clear();
+                        _canLinDataBatch.Clear();
+                        _auxDataBatch.Clear();
+                    }
+
+                    // 타이머 시작
                     _simulationTimer.Start();
-                    _dataTransmissionTimer.Start();
+                    _batchTransmissionTimer.Start();
 
-                    _logger.LogInformation("Simulation started successfully");
+                    _logger.LogInformation("High-performance simulation started - 128 channels at 100ms intervals");
                 }
                 else
                 {
@@ -270,8 +288,6 @@ namespace CyclerSim.ViewModels
                     ConnectionStatusColor = Brushes.Red;
                     StatusMessage = "Failed to connect to server";
                     IsRunning = false;
-
-                    _logger.LogWarning("Failed to connect to server");
                 }
             }
             catch (Exception ex)
@@ -289,51 +305,82 @@ namespace CyclerSim.ViewModels
             try
             {
                 _simulationTimer.Stop();
-                _dataTransmissionTimer.Stop();
+                _batchTransmissionTimer.Stop();
                 _cancellationTokenSource?.Cancel();
                 IsRunning = false;
                 ConnectionStatus = "Disconnected";
                 ConnectionStatusColor = Brushes.Red;
-                StatusMessage = "Simulation stopped";
 
-                // 큐 정리
-                while (_channelDataQueue.TryDequeue(out _)) { }
-                while (_canLinDataQueue.TryDequeue(out _)) { }
-                while (_auxDataQueue.TryDequeue(out _)) { }
+                // 최종 성능 리포트
+                var totalTime = DateTime.Now - _lastPerformanceReport;
+                var avgBatchesPerSec = _batchesSent / totalTime.TotalSeconds;
+                var avgDataPointsPerSec = _totalDataPointsSent / totalTime.TotalSeconds;
 
-                _logger.LogInformation("Simulation stopped");
+                StatusMessage = $"Simulation stopped. Avg: {avgBatchesPerSec:F1} batches/sec, {avgDataPointsPerSec:F0} data points/sec";
+
+                lock (_batchLock)
+                {
+                    _channelDataBatch.Clear();
+                    _canLinDataBatch.Clear();
+                    _auxDataBatch.Clear();
+                }
+
+                _logger.LogInformation("High-performance simulation stopped. Total batches: {Batches}, Total data points: {DataPoints}",
+                    _batchesSent, _totalDataPointsSent);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error stopping simulation");
-                StatusMessage = $"Error stopping: {ex.Message}";
             }
         }
 
-        private async void SimulationTimer_Tick(object? sender, EventArgs e)
+        private void SimulationTimer_Tick(object? sender, EventArgs e)
         {
             if (!IsRunning || _cancellationTokenSource?.IsCancellationRequested == true)
                 return;
 
             try
             {
-                // UI 데이터만 업데이트하고 큐에 추가
-                foreach (var channel in Channels.Where(c => c.AutoUpdate))
+                // 128채널 모든 데이터 생성 (실제 운영 시뮬레이션)
+                var channelDataList = new List<ChannelData>();
+                var canLinDataList = new List<CanLinData>();
+                var auxDataList = new List<AuxData>();
+
+                // 모든 128채널 데이터 생성
+                for (int i = 1; i <= MAX_CHANNELS; i++)
                 {
-                    channel.SimulateData();
-                    _channelDataQueue.Enqueue(channel.GetChannelData(EquipmentId));
+                    channelDataList.Add(GenerateChannelData(i));
                 }
 
-                foreach (var canLin in CanLinData.Where(c => c.AutoUpdate))
+                // CAN/LIN 데이터 생성
+                foreach (var canLin in CanLinData)
                 {
                     canLin.SimulateData();
-                    _canLinDataQueue.Enqueue(canLin.GetCanLinData(EquipmentId));
+                    canLinDataList.Add(canLin.GetCanLinData(EquipmentId));
                 }
 
-                foreach (var aux in AuxData.Where(a => a.AutoUpdate))
+                // AUX 데이터 생성
+                foreach (var aux in AuxData)
                 {
                     aux.SimulateData();
-                    _auxDataQueue.Enqueue(aux.GetAuxData(EquipmentId));
+                    auxDataList.Add(aux.GetAuxData(EquipmentId));
+                }
+
+                // UI 업데이트 (처음 16개 채널만)
+                for (int i = 0; i < Math.Min(Channels.Count, 16); i++)
+                {
+                    if (Channels[i].AutoUpdate)
+                    {
+                        Channels[i].SimulateData();
+                    }
+                }
+
+                // 배치에 데이터 추가
+                lock (_batchLock)
+                {
+                    _channelDataBatch.AddRange(channelDataList);
+                    _canLinDataBatch.AddRange(canLinDataList);
+                    _auxDataBatch.AddRange(auxDataList);
                 }
             }
             catch (Exception ex)
@@ -342,143 +389,138 @@ namespace CyclerSim.ViewModels
             }
         }
 
-        private async void DataTransmissionTimer_Tick(object? sender, EventArgs e)
+        private ChannelData GenerateChannelData(int channelNumber)
+        {
+            var random = new Random(channelNumber + Environment.TickCount);
+            var isActive = channelNumber <= 64; // 절반만 활성화
+
+            return new ChannelData
+            {
+                EquipmentId = EquipmentId,
+                ChannelNumber = channelNumber,
+                Status = isActive ? 1 : 0, // Active or Idle
+                Mode = random.Next(0, 5), // Random mode
+                Voltage = isActive ? 3.7 + (random.NextDouble() * 0.6) : 0,
+                Current = isActive ? 1.0 + (random.NextDouble() * 2.0) : 0,
+                Capacity = 50.0 + (channelNumber * 2),
+                Power = 0, // Will be calculated by server
+                Energy = isActive ? random.NextDouble() * 100 : 0,
+                ScheduleName = isActive ? $"Schedule_{channelNumber}" : ""
+            };
+        }
+
+        private async void BatchTransmissionTimer_Tick(object? sender, EventArgs e)
         {
             if (!IsRunning || _cancellationTokenSource?.IsCancellationRequested == true)
                 return;
 
-            // 연속 실패가 많으면 전송 간격 늘리기
-            if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES)
+            try
             {
-                _dataTransmissionTimer.Interval = TimeSpan.FromMilliseconds(TRANSMISSION_INTERVAL * 2);
-                StatusMessage = "Reduced transmission rate due to connection issues";
-            }
+                List<ChannelData> channelsToSend;
+                List<CanLinData> canLinToSend;
+                List<AuxData> auxToSend;
 
+                // 배치 데이터 가져오기
+                lock (_batchLock)
+                {
+                    channelsToSend = new List<ChannelData>(_channelDataBatch);
+                    canLinToSend = new List<CanLinData>(_canLinDataBatch);
+                    auxToSend = new List<AuxData>(_auxDataBatch);
+
+                    _channelDataBatch.Clear();
+                    _canLinDataBatch.Clear();
+                    _auxDataBatch.Clear();
+                }
+
+                if (channelsToSend.Count == 0 && canLinToSend.Count == 0 && auxToSend.Count == 0)
+                    return;
+
+                // 배치 전송
+                var success = await SendBatchData(channelsToSend, canLinToSend, auxToSend);
+
+                if (success)
+                {
+                    var totalDataPoints = channelsToSend.Count + canLinToSend.Count + auxToSend.Count;
+                    DataSentCount += totalDataPoints;
+                    _batchesSent++;
+                    _totalDataPointsSent += totalDataPoints;
+
+                    ConnectionStatus = "Connected";
+                    ConnectionStatusColor = Brushes.Green;
+
+                    // 성능 모니터링 (5초마다)
+                    if (DateTime.Now - _lastPerformanceReport > TimeSpan.FromSeconds(5))
+                    {
+                        var batchesPerSec = _batchesSent / 5.0;
+                        var dataPointsPerSec = (_totalDataPointsSent - _dataSentCount) / 5.0;
+
+                        StatusMessage = $"Running: {batchesPerSec:F1} batches/sec, {dataPointsPerSec:F0} points/sec, {channelsToSend.Count} channels";
+
+                        _lastPerformanceReport = DateTime.Now;
+                        _batchesSent = 0;
+                    }
+                }
+                else
+                {
+                    ConnectionStatus = "Transmission Failed";
+                    ConnectionStatusColor = Brushes.Orange;
+                    _logger.LogWarning("Batch transmission failed for {Channels} channels", channelsToSend.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during batch transmission");
+                ConnectionStatus = "Error";
+                ConnectionStatusColor = Brushes.Red;
+            }
+        }
+
+        private async Task<bool> SendBatchData(List<ChannelData> channels, List<CanLinData> canLin, List<AuxData> aux)
+        {
             try
             {
                 var tasks = new List<Task<bool>>();
 
-                // 배치로 큐에서 데이터 처리 (최대 개수 제한)
-                var channelsToSend = new List<ChannelData>();
-                var canLinToSend = new List<CanLinData>();
-                var auxToSend = new List<AuxData>();
-
-                // 큐에서 최대 5개씩만 처리
-                for (int i = 0; i < 5 && _channelDataQueue.TryDequeue(out var channelData); i++)
+                // 채널 데이터를 배치로 전송
+                if (channels.Count > 0)
                 {
-                    channelsToSend.Add(channelData);
+                    tasks.Add(_dataService.SendChannelDataBatchAsync(channels));
                 }
 
-                for (int i = 0; i < 3 && _canLinDataQueue.TryDequeue(out var canLinData); i++)
+                // CAN/LIN 데이터 개별 전송 (수가 적으므로)
+                foreach (var data in canLin)
                 {
-                    canLinToSend.Add(canLinData);
+                    tasks.Add(_dataService.SendCanLinDataAsync(data));
                 }
 
-                for (int i = 0; i < 3 && _auxDataQueue.TryDequeue(out var auxData); i++)
+                // AUX 데이터 개별 전송 (수가 적으므로)
+                foreach (var data in aux)
                 {
-                    auxToSend.Add(auxData);
+                    tasks.Add(_dataService.SendAuxDataAsync(data));
                 }
 
-                // 병렬 전송 (제한된 수)
-                foreach (var data in channelsToSend)
+                if (tasks.Count == 0) return true;
+
+                // 모든 전송 작업 완료 대기 (타임아웃 1초)
+                var completedTask = await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(1000));
+
+                if (completedTask is Task<bool[]> resultTask)
                 {
-                    tasks.Add(SendChannelDataSafely(data));
+                    var results = await resultTask;
+                    return results.All(r => r);
                 }
-
-                foreach (var data in canLinToSend)
+                else
                 {
-                    tasks.Add(SendCanLinDataSafely(data));
-                }
-
-                foreach (var data in auxToSend)
-                {
-                    tasks.Add(SendAuxDataSafely(data));
-                }
-
-                if (tasks.Any())
-                {
-                    // 타임아웃을 더 짧게 설정
-                    var timeoutTask = Task.Delay(3000);
-                    var completedTask = await Task.WhenAny(Task.WhenAll(tasks), timeoutTask);
-
-                    if (completedTask == timeoutTask)
-                    {
-                        _logger.LogWarning("Data transmission timeout");
-                        _consecutiveFailures++;
-                        ConnectionStatus = "Timeout";
-                        ConnectionStatusColor = Brushes.Orange;
-                    }
-                    else
-                    {
-                        var results = await Task.WhenAll(tasks);
-                        var successCount = results.Count(r => r);
-
-                        DataSentCount += successCount;
-
-                        if (successCount > 0)
-                        {
-                            _consecutiveFailures = 0;
-                            ConnectionStatus = "Connected";
-                            ConnectionStatusColor = Brushes.Green;
-                            _dataTransmissionTimer.Interval = TimeSpan.FromMilliseconds(TRANSMISSION_INTERVAL);
-                        }
-                        else
-                        {
-                            _consecutiveFailures++;
-                        }
-                    }
+                    _logger.LogWarning("Batch transmission timeout");
+                    return false;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during data transmission");
-                _consecutiveFailures++;
-                ConnectionStatus = "Connection Error";
-                ConnectionStatusColor = Brushes.Orange;
-                StatusMessage = "Data transmission error";
-            }
-        }
-
-        // 안전한 데이터 전송 메서드들
-        private async Task<bool> SendChannelDataSafely(ChannelData channelData)
-        {
-            try
-            {
-                return await _dataService.SendChannelDataAsync(channelData);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send channel {Channel} data", channelData.ChannelNumber);
+                _logger.LogError(ex, "Error sending batch data");
                 return false;
             }
         }
-
-        private async Task<bool> SendCanLinDataSafely(CanLinData canLinData)
-        {
-            try
-            {
-                return await _dataService.SendCanLinDataAsync(canLinData);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send CAN/LIN {Name} data", canLinData.Name);
-                return false;
-            }
-        }
-
-        private async Task<bool> SendAuxDataSafely(AuxData auxData)
-        {
-            try
-            {
-                return await _dataService.SendAuxDataAsync(auxData);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send AUX {SensorId} data", auxData.SensorId);
-                return false;
-            }
-        }
-
         private async Task SendAlarm()
         {
             if (string.IsNullOrWhiteSpace(NewAlarmMessage))
@@ -512,31 +554,19 @@ namespace CyclerSim.ViewModels
                     Status = "Sent"
                 });
 
-                // 최대 50개만 유지
                 while (AlarmHistory.Count > 50)
                 {
                     AlarmHistory.RemoveAt(AlarmHistory.Count - 1);
                 }
 
                 NewAlarmMessage = string.Empty;
-                NewAlarmLevel = 0;
                 StatusMessage = "Alarm sent successfully";
                 DataSentCount++;
-
-                _logger.LogInformation("Alarm sent: {Level} - {Message}", levelText, alarmData.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending alarm");
                 StatusMessage = $"Failed to send alarm: {ex.Message}";
-
-                AlarmHistory.Insert(0, new AlarmHistoryItem
-                {
-                    Timestamp = DateTime.Now,
-                    Level = "Error",
-                    Message = NewAlarmMessage,
-                    Status = "Failed"
-                });
             }
         }
 
@@ -547,7 +577,7 @@ namespace CyclerSim.ViewModels
         public void Dispose()
         {
             _simulationTimer?.Stop();
-            _dataTransmissionTimer?.Stop();
+            _batchTransmissionTimer?.Stop();
             _clockTimer?.Stop();
             _cancellationTokenSource?.Cancel();
             _cancellationTokenSource?.Dispose();

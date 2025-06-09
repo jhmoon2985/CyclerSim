@@ -17,16 +17,18 @@ namespace CyclerSim.Services
         public HttpService(ILogger<HttpService> logger)
         {
             _logger = logger;
-            _httpClient = new HttpClient();
-            _httpClient.Timeout = TimeSpan.FromSeconds(10); // 타임아웃 증가
 
-            // SSL 인증서 검증 우회 (개발용)
+            // 고성능 설정
             var handler = new HttpClientHandler()
             {
-                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true,
+                MaxConnectionsPerServer = 10  // 연결 풀 증가
             };
+
             _httpClient = new HttpClient(handler);
-            _httpClient.Timeout = TimeSpan.FromSeconds(10);
+            _httpClient.Timeout = TimeSpan.FromSeconds(5); // 타임아웃 단축
+            _httpClient.DefaultRequestHeaders.Add("Connection", "keep-alive");
+            _httpClient.DefaultRequestHeaders.Add("Keep-Alive", "timeout=60");
         }
 
         public void SetServerUrl(string serverUrl)
@@ -44,39 +46,33 @@ namespace CyclerSim.Services
 
                 var url = $"{_serverUrl}{endpoint}";
 
-                _logger.LogDebug("Sending POST request to: {Url}", url);
-                _logger.LogDebug("Request payload: {Json}", json);
-
                 var response = await _httpClient.PostAsync(url, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogDebug("Successfully posted to {Endpoint}. Response: {Response}",
-                        endpoint, responseContent);
+                    _logger.LogDebug("Successfully posted to {Endpoint}", endpoint);
                     return true;
                 }
                 else
                 {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogWarning("Failed to post to {Endpoint}. Status: {StatusCode}, Response: {Response}",
-                        endpoint, response.StatusCode, responseContent);
+                    _logger.LogWarning("Failed to post to {Endpoint}. Status: {StatusCode}",
+                        endpoint, response.StatusCode);
                     return false;
                 }
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "HTTP error posting to {Endpoint}: {Message}", endpoint, ex.Message);
+                _logger.LogError(ex, "HTTP error posting to {Endpoint}", endpoint);
                 return false;
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Timeout posting to {Endpoint}: {Message}", endpoint, ex.Message);
+                _logger.LogError(ex, "Timeout posting to {Endpoint}", endpoint);
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error posting to {Endpoint}: {Message}", endpoint, ex.Message);
+                _logger.LogError(ex, "Unexpected error posting to {Endpoint}", endpoint);
                 return false;
             }
         }
@@ -85,17 +81,12 @@ namespace CyclerSim.Services
         {
             try
             {
-                // 새로운 테스트 엔드포인트 사용
                 var url = $"{_serverUrl}/api/ClientData/test";
-
-                _logger.LogInformation("Testing connection to: {Url}", url);
-
                 var response = await _httpClient.GetAsync(url);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogInformation("Connection test successful. Response: {Response}", responseContent);
+                    _logger.LogInformation("Connection test successful");
                     return true;
                 }
                 else
@@ -104,19 +95,9 @@ namespace CyclerSim.Services
                     return false;
                 }
             }
-            catch (HttpRequestException ex)
-            {
-                _logger.LogError(ex, "Connection test failed - HTTP error: {Message}", ex.Message);
-                return false;
-            }
-            catch (TaskCanceledException ex)
-            {
-                _logger.LogError(ex, "Connection test failed - Timeout: {Message}", ex.Message);
-                return false;
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Connection test failed - Unexpected error: {Message}", ex.Message);
+                _logger.LogError(ex, "Connection test failed");
                 return false;
             }
         }
